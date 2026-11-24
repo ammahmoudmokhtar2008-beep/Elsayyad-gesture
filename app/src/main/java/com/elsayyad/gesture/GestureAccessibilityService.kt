@@ -1,33 +1,52 @@
 package com.elsayyad.gesture
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.GestureDescription
+import android.graphics.Path
 import android.media.AudioManager
+import android.os.Build
 import android.view.accessibility.AccessibilityEvent
-import android.view.accessibility.AccessibilityNodeInfo
 
 class GestureAccessibilityService : AccessibilityService() {
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        instance = this
+    }
+
+    override fun onDestroy() {
+        if (instance === this) instance = null
+        super.onDestroy()
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit
     override fun onInterrupt() = Unit
 
-    fun scroll(directionUp: Boolean) {
-        val root = rootInActiveWindow ?: return
-        val action = if (directionUp) AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD else AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
-        scrollNode(root, action)
-    }
-
-    private fun scrollNode(node: AccessibilityNodeInfo, action: Int): Boolean {
-        if (node.isScrollable && node.performAction(action)) return true
-        for (i in 0 until node.childCount) {
-            val child = node.getChild(i) ?: continue
-            if (scrollNode(child, action)) return true
+    fun performGesture(command: GestureCommand) {
+        when (command) {
+            GestureCommand.SCROLL_UP, GestureCommand.SCROLL_DOWN -> {
+                val metrics = resources.displayMetrics
+                val x = metrics.widthPixels * 0.5f
+                val fromY = metrics.heightPixels * if (command == GestureCommand.SCROLL_UP) 0.72f else 0.28f
+                val toY = metrics.heightPixels * if (command == GestureCommand.SCROLL_UP) 0.28f else 0.72f
+                val path = Path().apply { moveTo(x, fromY); lineTo(x, toY) }
+                val stroke = GestureDescription.StrokeDescription(path, 0, 260)
+                dispatchGesture(GestureDescription.Builder().addStroke(stroke).build(), null, null)
+            }
+            GestureCommand.VOLUME_UP, GestureCommand.VOLUME_DOWN -> {
+                val audio = getSystemService(AUDIO_SERVICE) as AudioManager
+                audio.adjustStreamVolume(
+                    AudioManager.STREAM_MUSIC,
+                    if (command == GestureCommand.VOLUME_UP) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER,
+                    AudioManager.FLAG_SHOW_UI
+                )
+            }
         }
-        return false
     }
 
-    fun changeVolume(up: Boolean) {
-        val audio = getSystemService(AUDIO_SERVICE) as AudioManager
-        audio.adjustStreamVolume(AudioManager.STREAM_MUSIC,
-            if (up) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER,
-            AudioManager.FLAG_SHOW_UI)
+    companion object {
+        @Volatile var instance: GestureAccessibilityService? = null
+            private set
     }
 }
+
+enum class GestureCommand { SCROLL_UP, SCROLL_DOWN, VOLUME_UP, VOLUME_DOWN }
